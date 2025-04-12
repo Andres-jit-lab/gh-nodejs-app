@@ -28,7 +28,7 @@ jobs:
           scan-type: 'fs'
           scan-ref: '.'
           cache: 'true'
-          output: trivy-report.json
+          output: trivy-fs-report.json
           format: json
           exit-code: 0
         #env:
@@ -74,7 +74,8 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref:  "${{ env.DOCKER_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
-          format: 'table'
+          output: trivy-image-report.json
+          format: 'json'
           exit-code: '0'
           ignore-unfixed: true
           #vuln-type: 'os,library'
