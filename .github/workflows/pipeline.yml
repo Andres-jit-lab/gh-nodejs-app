@@ -31,7 +31,7 @@ jobs:
           output: trivy-report.json
           format: json
           exit-code: 0
-        env:
+        #env:
           #TRIVY_SKIP_DB_UPDATE: true
           #TRIVY_SKIP_JAVA_DB_UPDATE: true
           
