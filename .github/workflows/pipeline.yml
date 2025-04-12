@@ -1,19 +1,18 @@
 name: Aqua Security pipeline
 on:
-  #push:
-    #branches:
-      #- main
+  push:
+    branches:
+      - main
   pull_request:
     branches: 
       - main
       # comment5
       
 env:
-   DEPARTMENT: sdr  #e.g sdr, csm
-   DOCKER_REPOSITORY: aquasaemea #<dockerhub name> e.g andresguisado
-   CONTAINER_NAME: onboarding-app #<name + first letter of your last name> e.g andresg-app
-   IMAGE_NAME: emea-onboarding-app
-   IMAGE_TAG: ${{ github.run_number }} # $GITHUB_RUN_NUMBER - don't need to do anything
+   DOCKER_REPOSITORY: andresguisado # name of Docker Hub ID
+   IMAGE_NAME: gh-nodejs-app
+   #CONTAINER_NAME: gh-nodejs-app #<name + first letter of your last name> e.g andresg-app
+   IMAGE_TAG: ${{ github.run_number }} # $GITHUB_RUN_NUMBER
 
 jobs:
   CI-Code:
@@ -21,29 +20,40 @@ jobs:
     steps:
     
       - name: Checkout code
-        uses: actions/checkout@v2
-        
-      - name: Integrity Pipeline
-        uses: aquasecurity/pipeline-enforcer-action@main
-        with:
-          aqua-key: ${{ secrets.AQUA_KEY }}
-          aqua-secret: ${{ secrets.AQUA_SECRET }}
+        uses: actions/checkout@v4
           
-      - name: Aqua code scanning(SCA, Sensitive data, IaC, SAST, pipeline file, initial SBOM)
-        uses: docker://aquasec/aqua-scanner
+      - name: Generate Trivy Vulnerability Report
+        uses: aquasecurity/trivy-action@master
         with:
-          args: trivy fs --scanners misconfig,vuln,secret --sast --reachability --package-json --skip-files pom.xml .
-          # --format template --template "@Report-Templates/aqua.tpl" -o .github/workflows/code_scan_results.html
-          # To customize which severities to scan for, add the following flag: --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-          # To enable SAST scanning, add: --sast
-          # To enable npm/dotnet non-lock file scanning, add: --package-json / --dotnet-proj
+          scan-type: 'fs'
+          scan-ref: '.'
+          cache: 'true'
+          output: trivy-report.json
+          format: json
+          exit-code: 0
         env:
-          AQUA_KEY: ${{ secrets.AQUA_KEY }}
-          AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
-          GITHUB_TOKEN: ${{ github.token }}
-          TRIVY_RUN_AS_PLUGIN: 'aqua'
+          TRIVY_SKIP_DB_UPDATE: true
+          TRIVY_SKIP_JAVA_DB_UPDATE: true
+          
+      - name: Upload Vulnerability Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+          retention-days: 30
+          
+      - name: Fail build on High/Criticial Vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          format: table
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          # On a subsequent call to the action we know trivy is already installed so can skip this
+          skip-setup-trivy: true
 
-         
   CI-Build:
     needs: CI-Code
     runs-on: ubuntu-22.04
@@ -51,13 +61,7 @@ jobs:
     steps:   
    
       - name: Checkout code
-        uses: actions/checkout@v2
-        
-      - name: Integrity Pipeline
-        uses: aquasecurity/pipeline-enforcer-action@main
-        with:
-          aqua-key: ${{ secrets.AQUA_KEY }}
-          aqua-secret: ${{ secrets.AQUA_SECRET }}
+        uses: actions/checkout@v4
   
       - name: Build application
         run: echo Application has been succesfully built   
@@ -65,27 +69,16 @@ jobs:
       - name: Build image container
         run: |
           sudo docker build -t $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG .
-        
-      - name: Login to Aqua Registry
-        uses: docker/login-action@v1
-        with:
-          registry: registry.aquasec.com
-          username: ${{ secrets.AQUA_REGISTRY_USERNAME }}
-          password: ${{ secrets.AQUA_REGISTRY_PASS }}
           
-      - name: Scanning container image
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock registry.aquasec.com/scanner:2404.30.6 scan --host ${{ secrets.AQUA_HOST }} --local $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG --token ${{ secrets.AQUA_TOKEN }} --layer-vulnerabilities --no-verify --html > .github/workflows/scan-output.html
-      # --register --registry "CI/CD_andres_images" 
-      #github/workflows/scan-output.html
-      # --register --registry "CI/CD_andres_images"
-      # -e BUILD_JOB_NAME=$CI_JOB_NAME -e BUILD_URL=$CI_JOB_URL -e BUILD_NUMBER=$CI_JOB_ID
-      
-      - name: Upload HTML file to artifact
-        uses: actions/upload-artifact@v4
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-         name: Aqua Image Scan Report
-         path: .github/workflows/scan-output.html
+          image-ref: '$DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          #vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
          
       #- name: Log in to Docker Hub
         #uses: docker/login-action@v2
@@ -107,58 +100,31 @@ jobs:
           docker push $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG 
           docker tag $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG $DOCKER_REPOSITORY/$IMAGE_NAME:latest
           docker push $DOCKER_REPOSITORY/$IMAGE_NAME:latest 
-     
-      - name: SBOM Generation
-        run: |
-          export BILLY_SERVER=https://billy.codesec.aquasec.com
-          curl -sLo install.sh download.codesec.aquasec.com/billy/install.sh
-          curl -sLo install.sh.checksum https://github.com/argonsecurity/releases/releases/latest/download/install.sh.checksum
-          if ! cat install.sh.checksum | sha256sum ; then
-          echo "install.sh checksum failed"
-          exit 1
-          fi
-          BINDIR="." sh install.sh
-          rm install.sh install.sh.checksum
-          ./billy generate \
-            --access-token "${{ github.token }}" \
-            --aqua-key "${{ secrets.AQUA_KEY }}" \
-            --aqua-secret "${{ secrets.AQUA_SECRET }}" \
-            --artifact-path "$DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG"
-
-            # The docker image name:tag of the newly built image
-            # --artifact-path "my-image-name:${{ env.tag-version }}" 
-            # OR the path to the root folder of your project. I.e my-repo/my-app 
-            ## --artifact-path "${{env.MY_APP_ROOT}}"
             
   CD-Deploy:
     needs: CI-Build
     runs-on: ubuntu-22.04
-    
+  
     steps: 
     
       - name: Checkout code
-        uses: actions/checkout@v2
-        
-      - name: Integrity Pipeline
-        uses: aquasecurity/pipeline-enforcer-action@main
-        with:
-          aqua-key: ${{ secrets.AQUA_KEY }}
-          aqua-secret: ${{ secrets.AQUA_SECRET }}
+        uses: actions/checkout@v4
+    
          
-      - name: Setting K8s context
-        uses: azure/k8s-set-context@v3
-        with:
-           method: kubeconfig
-           kubeconfig: ${{ secrets.KUBECONFIG }}
-           context: emea-aguisado-test
+    #  - name: Setting K8s context
+    #    uses: azure/k8s-set-context@v3
+    #    with:
+    #      method: kubeconfig
+    #      kubeconfig: ${{ secrets.KUBECONFIG }}
+    #       context: emea-aguisado-test
            
-      - name: Deploying
-        run: |
-          export IMAGE_CONTAINER="docker.io/$DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG"
-          export CONTAINER_NAME="$CONTAINER_NAME"
-          export DEPARTMENT="$DEPARTMENT"
-          sed -e "s#{{ IMAGE_CONTAINER }}#$IMAGE_CONTAINER#g" -e "s#{{ CONTAINER_NAME }}#$CONTAINER_NAME#g" -e "s#{{ DEPARTMENT }}#$DEPARTMENT#g" "./manifests/dev/deployment.yaml" | 
-          kubectl apply -f -
-          sed -e "s#{{ CONTAINER_NAME }}#$CONTAINER_NAME#g" -e "s#{{ DEPARTMENT }}#$DEPARTMENT#g" "./manifests/dev/service.yaml" | 
-          kubectl apply -f -
+    #  - name: Deploying
+    #    run: |
+    #      export IMAGE_CONTAINER="docker.io/$DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG"
+    #      export CONTAINER_NAME="$CONTAINER_NAME"
+    #      export DEPARTMENT="$DEPARTMENT"
+    #      sed -e "s#{{ IMAGE_CONTAINER }}#$IMAGE_CONTAINER#g" -e "s#{{ CONTAINER_NAME }}#$CONTAINER_NAME#g" -e "s#{{ DEPARTMENT }}#$DEPARTMENT#g" "./manifests/dev/deployment.yaml" | 
+    #      kubectl apply -f -
+    #      sed -e "s#{{ CONTAINER_NAME }}#$CONTAINER_NAME#g" -e "s#{{ DEPARTMENT }}#$DEPARTMENT#g" "./manifests/dev/service.yaml" | 
+    #      kubectl apply -f -
             
