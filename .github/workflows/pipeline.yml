@@ -54,7 +54,6 @@ jobs:
           exit-code: 0
           # On a subsequent call to the action we know trivy is already installed so can skip this
           skip-setup-trivy: true
-
           
   CI-Build:
     needs: CI-Code
@@ -104,32 +103,12 @@ jobs:
       - name: Run AIKIDO image scan
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aikidosecurity/local-scanner image-scan $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG --apikey ${{ secrets.AIKIDO_CI_TOKEN }} 
-      #github/workflows/scan-output.html
-      # --register --registry "CI/CD_andres_images"
-      # -e BUILD_JOB_NAME=$CI_JOB_NAME -e BUILD_URL=$CI_JOB_URL -e BUILD_NUMBER=$CI_JOB_ID
-      
-      #- name: Log in to Docker Hub
-        #uses: docker/login-action@v2
-        #with:
-          #username: ${{ secrets.DOCKERHUB_USERNAME }}
-          #password: ${{ secrets.DOCKERHUB_PAT }}
-
-      #- name: Build and push Docker image
-        #uses: docker/build-push-action@v6
-        #with:
-          #context: .
-          #file: ./Dockerfile
-          #push: true
-          #tags: ${{ env.DOCKER_REPOSITORY}}/${{ env.IMAGE_NAME}}:${{ env.IMAGE_TAG}}
           
-     - name: Install Dependencies & Jit CLI
+      - name: Install Dependencies & Jit CLI
         run: |
           sudo apt-get update && sudo apt-get install -y curl git
           curl -L https://jit-cli.s3.us-east-1.amazonaws.com/jit-cli/latest/jit-cli-amd64-slim -o jit-cli
           chmod +x jit-cli
-
-      - name: Build Container Image
-        run: docker build -t <image>
 
       - name: Run Jit CLI Scan
         env:
