@@ -10,7 +10,7 @@ on:
       
 env:
    DOCKER_REPOSITORY: andresguisado # name of Docker Hub ID
-   IMAGE_NAME: gh-nodejs-app
+   IMAGE_NAME: gh-nodejs-app-jit
    #CONTAINER_NAME: gh-nodejs-app #<name + first letter of your last name> e.g andresg-app
    IMAGE_TAG: ${{ github.run_number }} # $GITHUB_RUN_NUMBER
 
@@ -42,23 +42,6 @@ jobs:
           name: trivy-fs-report
           path: trivy-fs-report.json
           retention-days: 30
-          
-      - name: SARIF
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          cache: 'true'
-          format: 'sarif'
-          output: 'trivy-fs-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          skip-setup-trivy: true
-          ignore-unfixed: true
-
-      - name: Upload Trivy image scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-fs-results.sarif' 
           
       - name: Fail build on High/Criticial Vulnerabilities
         uses: aquasecurity/trivy-action@master
@@ -107,21 +90,6 @@ jobs:
           path: trivy-image-report.json
           retention-days: 30
           
-      - name: SARIF
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: "${{ env.DOCKER_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
-          format: 'sarif'
-          output: 'trivy-image-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          skip-setup-trivy: true
-          ignore-unfixed: true
-
-      - name: Upload Trivy image scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-image-results.sarif'
-          
       - name: Run Trivy vulnerability image scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -154,6 +122,36 @@ jobs:
           #push: true
           #tags: ${{ env.DOCKER_REPOSITORY}}/${{ env.IMAGE_NAME}}:${{ env.IMAGE_TAG}}
           
+     - name: Install Dependencies & Jit CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y curl git
+          curl -L https://jit-cli.s3.us-east-1.amazonaws.com/jit-cli/latest/jit-cli-amd64-slim -o jit-cli
+          chmod +x jit-cli
+
+      - name: Build Container Image
+        run: docker build -t <image>
+
+      - name: Run Jit CLI Scan
+        env:
+          # Data relevant for creating a PR reivew
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+          # Needed for communicating Jit BE
+          JIT_CLIENT_ID: ${{ secrets.JIT_CLIENT_ID }}
+          JIT_SECRET_KEY: ${{ secrets.JIT_SECRET_KEY }}
+        run: |
+          ./jit-cli container \
+            --image $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG \
+            --tracking-name <example-registry.io/image-name> \
+            --organization "$GITHUB_REPOSITORY_OWNER" \
+            --repo "${GITHUB_REPOSITORY#*/}" \
+            --pull-request "${PR_NUMBER}" \
+            --commit-id "${COMMIT_ID}" \
+            --fail-on-findings \
+            --new-findings-only     
+            
       - name: Docker Login & Push
         run: |
           echo "${{ secrets.DOCKERHUB_PAT }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
