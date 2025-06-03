@@ -97,10 +97,6 @@ jobs:
           #vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      - name: Run AIKIDO image scan
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aikidosecurity/local-scanner image-scan $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG --apikey ${{ secrets.AIKIDO_CI_TOKEN }} 
-          
       - name: Install Dependencies & Jit CLI
         run: |
           sudo apt-get update && sudo apt-get install -y curl git
@@ -126,8 +122,8 @@ jobs:
             --pull-request "${PR_NUMBER}" \
             --commit-id "${COMMIT_ID}" \
             --fail-on-findings \
-            --add-to-backlog \
-            --new-findings-only     
+            --add-to-backlog 
+        #--new-findings-only     
 
       - name: Generating SBOM
         uses: aquasecurity/trivy-action@master
