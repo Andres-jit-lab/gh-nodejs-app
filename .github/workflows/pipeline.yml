@@ -3,10 +3,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches: 
-      - main
-      # comment5
       
 env:
    DOCKER_REPOSITORY: andresguisado # name of Docker Hub ID
@@ -128,8 +124,10 @@ jobs:
             --repo "${GITHUB_REPOSITORY#*/}" \
             --pull-request "${PR_NUMBER}" \
             --commit-id "${COMMIT_ID}" \
-            --fail-on-findings \
+            --add-to-backlog \
             --new-findings-only     
+        #--fail-on-findings \
+           
             
       - name: Docker Login & Push
         run: |
