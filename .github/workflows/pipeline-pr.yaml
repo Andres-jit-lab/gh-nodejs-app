@@ -1,0 +1,146 @@
+name: gh-nodejs-app-pr
+on:
+  pull_request:
+    branches: 
+      - main
+      # comment5
+      
+env:
+   DOCKER_REPOSITORY: andresguisado # name of Docker Hub ID
+   IMAGE_NAME: gh-nodejs-app-jit
+   #CONTAINER_NAME: gh-nodejs-app #<name + first letter of your last name> e.g andresg-app
+   IMAGE_TAG: ${{ github.run_number }} # $GITHUB_RUN_NUMBER
+
+jobs:
+  CI-Code:
+    runs-on: ubuntu-22.04
+    steps:
+    
+      - name: Checkout code
+        uses: actions/checkout@v4
+          
+      - name: Generate Trivy Vulnerability Report
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          cache: 'true'
+          output: trivy-fs-report.json
+          format: json
+          ignore-unfixed: true
+          exit-code: 0
+        #env:
+          #TRIVY_SKIP_DB_UPDATE: true
+          #TRIVY_SKIP_JAVA_DB_UPDATE: true
+          
+      - name: Upload Vulnerability Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report
+          path: trivy-fs-report.json
+          retention-days: 30
+          
+      - name: Fail build on High/Criticial Vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          format: table
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
+          # On a subsequent call to the action we know trivy is already installed so can skip this
+          skip-setup-trivy: true
+          
+  CI-Build:
+    needs: CI-Code
+    runs-on: ubuntu-22.04
+      
+    steps:   
+   
+      - name: Checkout code
+        uses: actions/checkout@v4
+  
+      - name: Build application
+        run: echo Application has been succesfully built   
+          
+      - name: Build image container
+        run: |
+          sudo docker build -t $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG .
+          
+      - name: Run Trivy vulnerability image scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.DOCKER_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          output: trivy-image-report.json
+          format: 'json'
+          exit-code: '0'
+          ignore-unfixed: true
+          #vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Image Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: trivy-image-report.json
+          retention-days: 30
+          
+      - name: Run Trivy vulnerability image scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.DOCKER_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          skip-setup-trivy: true
+          #vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run AIKIDO image scan
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aikidosecurity/local-scanner image-scan $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG --apikey ${{ secrets.AIKIDO_CI_TOKEN }} 
+          
+      - name: Install Dependencies & Jit CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y curl git
+          curl -L https://jit-cli.s3.us-east-1.amazonaws.com/jit-cli/latest/jit-cli-amd64-slim -o jit-cli
+          chmod +x jit-cli
+
+      - name: Run Jit CLI Scan
+        env:
+          # Data relevant for creating a PR reivew
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+          # Needed for communicating Jit BE
+          JIT_CLIENT_ID: ${{ secrets.JIT_CLIENT_ID }}
+          JIT_SECRET_KEY: ${{ secrets.JIT_SECRET_KEY }}
+        run: |
+          ./jit-cli container \
+            --image $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG \
+            --tracking-name <example-registry.io/image-name> \
+            --organization "$GITHUB_REPOSITORY_OWNER" \
+            --repo "${GITHUB_REPOSITORY#*/}" \
+            --pull-request "${PR_NUMBER}" \
+            --commit-id "${COMMIT_ID}" \
+            --fail-on-findings \
+            --new-findings-only     
+
+      - name: Generating SBOM
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.DOCKER_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          format: 'github'
+          output: 'dependency-results.sbom.json'
+          github-pat: ${{ secrets.GITHUB_TOKEN }} # or ${{ secrets.github_pat_name }} if you're using a PAT
+          severity: "MEDIUM,HIGH,CRITICAL"
+
+      - name: Upload trivy report as a Github artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sbom-report
+          path: '${{ github.workspace }}/dependency-results.sbom.json'
+          retention-days: 30 # 90 is the default
+ 
