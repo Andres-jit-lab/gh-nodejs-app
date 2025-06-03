@@ -126,6 +126,7 @@ jobs:
             --pull-request "${PR_NUMBER}" \
             --commit-id "${COMMIT_ID}" \
             --fail-on-findings \
+            --add-to-backlog \
             --new-findings-only     
 
       - name: Generating SBOM
