@@ -125,9 +125,8 @@ jobs:
             --pull-request "${PR_NUMBER}" \
             --commit-id "${COMMIT_ID}" \
             --add-to-backlog \
-            --new-findings-only     
-        #--fail-on-findings \
-           
+            --fail-on-findings \
+            --new-findings-only        
             
       - name: Docker Login & Push
         run: |
