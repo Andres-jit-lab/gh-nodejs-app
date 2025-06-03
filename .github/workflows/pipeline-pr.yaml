@@ -96,10 +96,6 @@ jobs:
           skip-setup-trivy: true
           #vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-
-      - name: Run AIKIDO image scan
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aikidosecurity/local-scanner image-scan $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG --apikey ${{ secrets.AIKIDO_CI_TOKEN }} 
           
       - name: Install Dependencies & Jit CLI
         run: |
