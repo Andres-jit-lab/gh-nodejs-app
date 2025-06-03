@@ -7,7 +7,7 @@ on:
       
 env:
    DOCKER_REPOSITORY: andresguisado # name of Docker Hub ID
-   IMAGE_NAME: gh-nodejs-app-jit
+   IMAGE_NAME: gh-nodejs-app
    #CONTAINER_NAME: gh-nodejs-app #<name + first letter of your last name> e.g andresg-app
    IMAGE_TAG: ${{ github.run_number }} # $GITHUB_RUN_NUMBER
 
@@ -126,8 +126,8 @@ jobs:
             --pull-request "${PR_NUMBER}" \
             --commit-id "${COMMIT_ID}" \
             --fail-on-findings \
-            --add-to-backlog \
-            --new-findings-only     
+            --add-to-backlog 
+        #--new-findings-only     
 
       - name: Generating SBOM
         uses: aquasecurity/trivy-action@master
