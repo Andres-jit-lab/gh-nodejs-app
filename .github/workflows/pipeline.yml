@@ -119,7 +119,7 @@ jobs:
         run: |
           ./jit-cli container \
             --image $DOCKER_REPOSITORY/$IMAGE_NAME:$IMAGE_TAG \
-            --tracking-name <example-registry.io/image-name> \
+            --tracking-name $DOCKER_REPOSITORY/$IMAGE_NAME \
             --organization "$GITHUB_REPOSITORY_OWNER" \
             --repo "${GITHUB_REPOSITORY#*/}" \
             --pull-request "${PR_NUMBER}" \
